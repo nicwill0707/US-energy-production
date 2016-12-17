@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset=utf-8 />
+    <title>N Williamson lab 9</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.0.2/dist/leaflet.css" />
+    <link href='http://fonts.googleapis.com/css?family=Lato' rel='stylesheet' type='text/css'>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: whitesmoke;
+            font-family: Lato, sans-serif;
+            color: #0D0000;
+        }
+        header {
+            padding: 6px 10%;
+        }
+        h1 {
+            display: inline-block;
+            margin-right: 20px;
+            color: #001323;
+        }
+        h2 {
+            display: inline-block;
+            color: #001323;
+        }
+        #map {
+            width: 80%;
+            height: 540px;
+            margin: 10px auto;
+        }
+        footer {
+            padding: 6px 10%;
+            width: 80%;
+        }
+        p {
+            font-size: 1em;
+            color: #001323;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>U.S. Energy</h1>
+        <h2>Select non-renewable energy production across the country</h2>
+    </header>
+
+    <div id='map'></div>
+
+    <footer>
+        <p>Map authored by N. Williamson</p>
+        <p>Here we can see the spatial distribution of coal, natural gas, and nuclear power production across the United States. Herein we may draw inferences on where power is most used, and get a notion of the volume of energy produced through each of the selected non-renewable resources.</p>
+    </footer>
+
+    <script src="https://unpkg.com/leaflet@1.0.2/dist/leaflet.js"></script>
+    <script src="power-plants.js"></script>
+    <script>
+
+       var map = L.map('map', {
+          center: [36,-94],
+          zoom: 4,
+      });
+
+      var tiles = L.tileLayer('http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="http://cartodb.com/attributions">CartoDB</a>',
+          subdomains: 'abcd',
+          maxZoom: 19
+      });
+
+      tiles.addTo(map);
+        
+         var radiusCircle = L.circle([0,0], 500000, {
+            fillColor: 'white',
+            fillOpacity: .1,
+            color: 'yellow',
+            opacity: .3,
+            stroke: false,
+            weight: 3,   
+        }).addTo(map); //spotlight feature creates 500 km bubble centered on user click
+
+        var commonStyles = {
+            weight: 1,
+            stroke: 1,
+            fillOpacity: .8
+        } //styling for all circle markers
+
+        var layerInfo = {
+            coalLayer: {
+                source: "Coal",
+                color: '#B0C4DE'
+            },
+            naturalgasLayer: {
+                source: "Natural Gas",
+                color: '#FAFAD2'
+            },
+            nuclearLayer: {
+                source: "Nuclear",
+                color: '#FF7F50'
+            }
+        }; //styling for individual circle marker layers
+
+        var geoJsonLayers = {};
+
+        for (var layer in layerInfo) {
+            geoJsonLayers[layer] = L.geoJson(plants, {
+                pointToLayer: function (feature, latlng) {
+                    return L.circleMarker(latlng, commonStyles);
+                },
+                filter: function (feature) {
+                    if (feature.properties.fuel_source[layerInfo[layer].source]) {
+                        return feature;
+                    }
+                },
+                style: function (feature) {
+                    return {
+                        color: layerInfo[layer].color,
+                        fillColor: layerInfo[layer].color,
+                        radius: getRadius(feature.properties.fuel_source[layerInfo[layer].source])
+                    }
+                }
+            }).addTo(map);
+        } //loops though .js and adds only plants with layerInfo source matching .js fuel_source
+
+        function getRadius(val) {
+            var radius = Math.sqrt(val / Math.PI);
+            return radius * .8;
+        } //normalizing circle radii
+
+        var sourcesLayers = {
+            "Coal": geoJsonLayers.coalLayer,
+            "Natural gas": geoJsonLayers.naturalgasLayer,
+            "Nuclear": geoJsonLayers.nuclearLayer
+        } //connects legend layers with correct map layers
+
+        var sourcesLayers = {
+            "<b style='color:#B0C4DE; text-shadow: 0px 0px 1px #333;'>Coal</b>": geoJsonLayers.coalLayer,
+            "<b style='color:#FAFAD2; text-shadow: 0px 0px 1px #333;'>Natural gas</b>": geoJsonLayers.naturalgasLayer,
+            "<b style='color:#FF7F50; text-shadow: 0px 0px 1px #333;'>Nuclear</b>": geoJsonLayers.nuclearLayer
+        } //styling legend
+
+        L.control.layers(null, sourcesLayers, {
+            collapsed: false
+        }).addTo(map); //adding the legend
+        
+        var allLayers = L.geoJson(plants); //connects (again) to .js and assigns to unique variable
+
+        map.on('click', function (e) {
+            
+            var stats = {};
+            
+            allLayers.eachLayer (function(layer) {
+                var distance = e.latlng.distanceTo(layer.getLatLng())/1000;
+                if (distance <= 500 ) {
+                    var props = layer.feature.properties;
+                    for (var source in props.fuel_source) {
+                        if (stats[source]) {
+                            stats[source] += props.fuel_source[source];
+                        } else {
+                            stats[source] = props.fuel_source[source];
+                        }
+                    }
+                }
+                                
+         })
+             
+            radiusCircle.setLatLng(e.latlng); //set circle center point on user click
+            
+            var statsContent = '';
+            for (stat in stats) {
+                statsContent += stat + ': <b>' + stats[stat].toLocaleString() + ' MW </b><br>'
+            }
+            
+            radiusCircle.bindPopup(statsContent).openPopup();
+            
+            for (var l in layerInfo) {
+            
+            geoJsonLayers[l].eachLayer(function (layer) {
+                var distance = e.latlng.distanceTo(layer.getLatLng()) / 1000;
+
+                if (distance > 500) {
+                    layer.setStyle({
+                        stroke: false,
+                        fill: false
+                    }); //beyond 500 km the circle markers will dissappear
+                } else {
+                    layer.setStyle({
+                        stroke: true,
+                        fill: true
+                    }); //within 500 km the circle markers stay
+                    
+                    var props = layer.feature.properties;
+                    
+                    var content = props.plant_name + "<br>";
+                    
+                    content += layerInfo[l].source + ': ' +
+                        props.fuel_source[layerInfo[l].source].toLocaleString() + " MW <br>";
+                    
+                    content += " I am <b>"+ distance.toLocaleString() + " km </b> <br> from the clickpoint."  
+                                                                
+                    layer.bindPopup(content);
+                }
+            
+            });
+            
+            } //for loop end here
+            
+       });
+
+    </script>
+
+</body>
+
+</html>
